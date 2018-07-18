@@ -242,7 +242,20 @@ RCT_EXPORT_METHOD(transferFile:(NSString *)url
 
 - (void)session:(WCSession *)session
  didReceiveFile:(WCSessionFile *)file {
-  NSLog(@"sessionDidReceiveFile: %@", @{@"url": file.fileURL, @"metadata": file.metadata});
+  NSLog(@"sessionDidReceiveFile: %@", @{@"url": file.fileURL, @"metadata": file.metadata}); // metadata = {"folder": "", "name": "name"}
+  NSError *err = nil;
+  NSFileManager *filemgr;
+  NSString *currentpath;
+  filemgr = [[NSFileManageralloc] init];
+  NSString *documentsPath = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true)[0];
+  NSString *folderName = [documentsPath stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"folder"]]];
+  [filemgr createDirectoryAtPath: folderName withIntermediateDirectories:trueattributes:nilerror: &err];
+  currentpath = [folderName stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"name"]] ];
+  NSString * content = [NSStringstringWithContentsOfURL: file.fileURL
+                                                  encoding:NSUTF8StringEncodingerror:&err];
+  [content writeToFile: currentpath atomically:YESencoding:NSUTF8StringEncodingerror: &err];
+  NSLog(@"Error sending message data %@", err);
+  [selfdispatchEventWithName:EVENT_FILE_RECEIVEDbody: file.metadata];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
