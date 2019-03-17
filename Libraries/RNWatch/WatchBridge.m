@@ -6,6 +6,7 @@ static const NSString* EVENT_FILE_TRANSFER_ERROR            = @"WatchFileTransfe
 static const NSString* EVENT_FILE_TRANSFER_FINISHED         = @"WatchFileTransferFinished";
 static const NSString* EVENT_RECEIVE_MESSAGE                = @"WatchReceiveMessage";
 static const NSString* EVENT_RECEIVE_MESSAGE_DATA           = @"WatchReceiveMessageData";
+static const NSString* EVENT_RECEIVE_FILE                   = @"WatchReceiveFile";
 static const NSString* EVENT_WATCH_STATE_CHANGED            = @"WatchStateChanged";
 static const NSString* EVENT_ACTIVATION_ERROR               = @"WatchActivationError";
 static const NSString* EVENT_WATCH_REACHABILITY_CHANGED     = @"WatchReachabilityChanged";
@@ -242,20 +243,29 @@ RCT_EXPORT_METHOD(transferFile:(NSString *)url
 
 - (void)session:(WCSession *)session
  didReceiveFile:(WCSessionFile *)file {
-  NSLog(@"sessionDidReceiveFile: %@", @{@"url": file.fileURL, @"metadata": file.metadata}); // metadata = {"folder": "", "name": "name"}
-  NSError *err = nil;
-  NSFileManager *filemgr;
-  NSString *currentpath;
-  filemgr = [[NSFileManageralloc] init];
-  NSString *documentsPath = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true)[0];
-  NSString *folderName = [documentsPath stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"folder"]]];
-  [filemgr createDirectoryAtPath: folderName withIntermediateDirectories:trueattributes:nilerror: &err];
-  currentpath = [folderName stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"name"]] ];
-  NSString * content = [NSStringstringWithContentsOfURL: file.fileURL
-                                                  encoding:NSUTF8StringEncodingerror:&err];
-  [content writeToFile: currentpath atomically:YESencoding:NSUTF8StringEncodingerror: &err];
-  NSLog(@"Error sending message data %@", err);
-  [selfdispatchEventWithName:EVENT_FILE_RECEIVEDbody: file.metadata];
+    NSLog(@"sessionDidReceiveFile: %@", @{@"url": file.fileURL, @"metadata": file.metadata});
+    NSError*err =nil;
+    NSFileManager*filemgr;
+    NSString*currentpath;
+    filemgr = [[NSFileManager alloc] init];
+    NSString *documentsPath = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true)[0];
+    NSString *folderName = [documentsPath stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"folder"]]];
+    [filemgr createDirectoryAtPath: folderName withIntermediateDirectories:true attributes:nil error: &err];
+    currentpath = [folderName stringByAppendingString: [@"/"stringByAppendingString: file.metadata[@"name"]] ];
+    NSString * content = [NSString stringWithContentsOfURL: file.fileURL encoding:NSUTF8StringEncoding error:&err];
+    [content writeToFile: currentpath atomically:YES encoding:NSUTF8StringEncoding error: &err];
+    NSLog(@"Error sending message data %@", err);
+    unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath: currentpath error:nil] fileSize];
+    if (fileSize != [file.metadata[@"fileSize"] unsignedLongLongValue] ) {
+        NSLog(@"MESSAGE_INCOMPLETE_FILE %@", file.metadata[@"name"]);
+        [session sendMessage:@{@"MESSAGE_INCOMPLETE_FILE": @{@"recorded_at": file.metadata[@"recorded_at"], @"name": file.metadata[@"name"]}} replyHandler:^(NSDictionary<NSString *,id> * _Nonnull replyMessage) {
+            NSLog(@"Message of `MESSAGE_INCOMPLETE_FILE` sent successfuly to watch");
+        } errorHandler:^(NSError * _Nonnull error) {
+            NSLog(@"Error sending message `MESSAGE_INCOMPLETE_FILE` to watch %@", error);
+        }];
+    } else {
+        [self dispatchEventWithName:EVENT_RECEIVE_FILE body: file.metadata];
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -307,7 +317,6 @@ didFinishFileTransfer:(WCSessionFileTransfer *)fileTransfer
 
 RCT_EXPORT_METHOD(updateApplicationContext:(NSDictionary<NSString *,id> *)context) {
   [self.session updateApplicationContext:context error:nil];
-  [self dispatchEventWithName:EVENT_APPLICATION_CONTEXT_RECEIVED body:context];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -320,8 +329,8 @@ RCT_EXPORT_METHOD(getApplicationContext:(RCTResponseSenderBlock)callback) {
 
 - (void)session:(WCSession *)session
 didReceiveApplicationContext:(NSDictionary<NSString *,id> *)applicationContext {
-  NSLog(@"sessionDidReceiveApplicationContext %@", applicationContext);
-  [self dispatchEventWithName:EVENT_APPLICATION_CONTEXT_RECEIVED body:self.session.applicationContext];
+    NSLog(@"sessionDidReceiveApplicationContext %@", applicationContext);
+    [self dispatchEventWithName:EVENT_APPLICATION_CONTEXT_RECEIVED body: applicationContext];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
